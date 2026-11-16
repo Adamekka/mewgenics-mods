@@ -1,0 +1,144 @@
+#!/bin/sh
+set -eu
+
+repo=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$repo"
+
+# Git and its hooks must never inherit a caller's Nexus credential.
+unset NEXUS_API_KEY nexus_key
+
+commit_inventory() {
+    if [ -n "$(git status --porcelain --untracked-files=all -- mods.json)" ]; then
+        git add -- mods.json
+        # Sync can undo a stale staged inventory, leaving nothing to commit after git add.
+        if ! git diff --cached --quiet -- mods.json; then
+            # Limit the commit to the inventory even when other files are staged.
+            git commit --only -m "deps(mods): back up installed mod selection" -- mods.json
+        fi
+    fi
+}
+
+load_api_key() {
+    python3 - <<'PY'
+from pathlib import Path
+import stat
+import sys
+
+path = Path.home() / ".config/mewgenics-mods/nexus-api-key"
+try:
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600:
+        raise ValueError("it must be a regular file with permissions 600")
+    key = path.read_text(encoding="utf-8").strip()
+    if not key or "\n" in key or "\r" in key:
+        raise ValueError("it must contain one nonempty API key")
+except (OSError, UnicodeError, ValueError) as error:
+    print(f"Cannot read Nexus API key at {path}: {error}.", file=sys.stderr)
+    raise SystemExit(2)
+sys.stdout.write(key)
+PY
+}
+
+if [ "$#" -eq 0 ]; then
+    echo "Usage: ./manage {status|backup|check|update|install --mod-id ID --archive PATH}" >&2
+    exit 2
+fi
+action=$1
+shift
+
+case "$action" in
+    backup|update|install)
+        if [ "${MEWGENICS_MANAGE_LOCK_PID-}" != "$$" ]; then
+            # Python's flock works on SteamOS and macOS, where the flock CLI may be absent.
+            exec python3 - "$repo" "$action" "$@" <<'PY'
+import fcntl
+import os
+from pathlib import Path
+import sys
+
+repo = Path(sys.argv[1])
+state = repo / ".state"
+state.mkdir(exist_ok=True)
+descriptor = os.open(state / "manage.lock", os.O_CREAT | os.O_RDWR, 0o600)
+try:
+    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    print("Another ./manage command is already changing this repository. Wait for it to finish.", file=sys.stderr)
+    raise SystemExit(2)
+os.set_inheritable(descriptor, True)
+environment = os.environ.copy()
+environment["MEWGENICS_MANAGE_LOCK_PID"] = str(os.getpid())
+os.execve("/bin/sh", ["/bin/sh", str(repo / "manage"), *sys.argv[2:]], environment)
+PY
+        fi
+        ;;
+esac
+
+case "$action" in
+    status)
+        python3 modctl.py status "$@"
+        ;;
+    backup)
+        python3 modctl.py sync "$@"
+        commit_inventory
+        git push origin HEAD
+        ;;
+    check)
+        nexus_key=$(load_api_key)
+        NEXUS_API_KEY="$nexus_key" python3 modctl.py check "$@"
+        ;;
+    update)
+        if [ -d "$(git rev-parse --git-path rebase-merge)" ] || [ -d "$(git rev-parse --git-path rebase-apply)" ]; then
+            echo "Finish or abort the existing Git rebase before running ./manage update." >&2
+            exit 2
+        fi
+        python3 modctl.py sync
+        commit_inventory
+        # Incoming inventory describes another checkout, so retain the actual local payload baseline.
+        cp mods.json .state/update-local-mods.json
+        if ! git pull --rebase; then
+            if [ -d "$(git rev-parse --git-path rebase-merge)" ] || [ -d "$(git rev-parse --git-path rebase-apply)" ]; then
+                if ! git rebase --abort; then
+                    echo "Could not abort the failed rebase. Run git rebase --abort; the local inventory is saved at $repo/.state/update-local-mods.json." >&2
+                    exit 2
+                fi
+            fi
+            cp .state/update-local-mods.json mods.json
+            echo "Git pull failed. The installed-mod inventory was retained at $repo/.state/update-local-mods.json; no mod updates ran." >&2
+            exit 2
+        fi
+        if ! cmp -s .state/update-local-mods.json mods.json; then
+            cp mods.json .state/update-incoming-mods.json
+            cp .state/update-local-mods.json mods.json
+            echo "The pulled inventory differs from this machine's installed mods. No mod updates ran." >&2
+            echo "Local inventory restored: $repo/mods.json" >&2
+            echo "Incoming inventory saved: $repo/.state/update-incoming-mods.json" >&2
+            echo "Reconcile these inventories and install the intended files before running update again." >&2
+            exit 3
+        fi
+        nexus_key=$(load_api_key)
+        NEXUS_API_KEY="$nexus_key" python3 modctl.py update "$@"
+        commit_inventory
+        git push origin HEAD
+        ;;
+    install)
+        needs_api_key=false
+        for argument in "$@"; do
+            case "$argument" in
+                --file-id|--file-id=*) needs_api_key=true ;;
+            esac
+        done
+        if [ "$needs_api_key" = true ]; then
+            nexus_key=$(load_api_key)
+            NEXUS_API_KEY="$nexus_key" python3 modctl.py install "$@"
+        else
+            python3 modctl.py install "$@"
+        fi
+        commit_inventory
+        git push origin HEAD
+        ;;
+    *)
+        echo "Unknown command: $action" >&2
+        exit 2
+        ;;
+esac
