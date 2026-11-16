@@ -17,7 +17,9 @@ The inventory, installer, updater, Git wrapper, and loader setup received two re
 
 The process-guard regression test reproduces the observed SteamOS restriction on reading an unrelated systemd process's executable link. Additional tests cover actual command-line permission failures for same-user and foreign-user processes. No findings were deferred.
 
-The suite contains 35 tests covering archive validation, manual archive identity, metadata and payload transactions, partial failures, restore order, selection preservation, process guards, loader recovery, real Git clones/rebases/pushes, and Git-hook credential isolation. It runs on macOS and ARM64 SteamOS. No formatter or linter is configured; Python compilation, shell syntax, and Git whitespace checks supplement the tests. Stored upstream patch context is exempt from whitespace normalization.
+The suite contains 38 tests covering archive validation, manual archive identity, metadata and payload transactions, partial failures, restore order, selection preservation, process guards, loader recovery, real Git clones/rebases/pushes, Git-hook credential isolation, and CI exit statuses. The original 35 installation/update tests passed on macOS and ARM64 SteamOS. The CI tests check updates, no updates, and a missing API key without reading local game configuration. Python compilation, shell syntax, Git whitespace checks, and `actionlint` supplement the tests. Stored upstream patch context is exempt from whitespace normalization.
+
+The scheduled CI checker received a separate scoped review from Claude Opus 5.5 and GPT 6.1 Sol. The resulting changes add exact free-account installation commands to update reports and document GitHub's public-repository schedule inactivity limit. The full test suite runs before the live check, so a test failure also makes the workflow fail.
 
 Live checks confirmed Nexus metadata and MD5 queries, the free-account download restriction and its actionable message, refusal to modify a running game, and initialization of all requested DLL mods. The user confirmed the game is visible. Gameplay inside a battle was not exercised.
 

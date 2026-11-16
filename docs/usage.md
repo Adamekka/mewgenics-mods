@@ -18,6 +18,12 @@ Always Show HP is installed through the SDK loader, outside Mewtator. Its invent
 
 ## Check or install updates
 
+The repository's **Mod updates** GitHub Actions workflow checks the tracked Nexus file-update chains daily at 07:17 UTC, on relevant pushes to `main`, and when run manually from Actions. It fails when an update is available or a check cannot complete. The log names the mod, old/new versions, and new file ID, and gives the Nexus files-page link and exact local installation command. It uses the free metadata API and does not need the VM running.
+
+The workflow needs the repository secret `NEXUS_API_KEY`. The check runs without local game configuration. `python3 modctl.py check --fail-on-update` exits `1` for available updates and `2` for API, configuration, or other check failures. Ordinary `check` remains informational. GitHub's Actions notification preferences control whether a failed run also sends you a notification.
+
+GitHub [disables schedules in public repositories after 60 days without repository activity](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows). Re-enable the workflow from the Actions tab if that happens.
+
 Store the Nexus API key in `~/.config/mewgenics-mods/nexus-api-key`, with file permissions `600`. This file is required by the `manage check` and `manage update` commands and is never added to Git. The standalone Python CLI instead requires the `NEXUS_API_KEY` environment variable for Nexus API requests.
 
 ```sh
@@ -42,7 +48,7 @@ This works with the free Nexus API. It identifies the archive's MD5 against both
 
 When restoring the exact archive already recorded in `mods.json`, omit `--file-id` to verify its recorded SHA-256 offline, without an API key.
 
-The scripts run when invoked. They do not install a scheduler or update mods while the game is running.
+Installation scripts run when invoked and refuse to change mods while the game is running. The scheduled CI workflow checks for updates; downloads and installations remain explicit operations.
 
 ## Restore on another installation
 

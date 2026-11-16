@@ -1,0 +1,37 @@
+name: Mod updates
+
+on:
+  schedule:
+    - cron: '17 7 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - mods.json
+      - modctl.py
+      - 'tests/**'
+      - .github/workflows/mod-updates.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexus-mod-updates
+  cancel-in-progress: false
+
+jobs:
+  check-mod-updates:
+    name: Check for Nexus mod updates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the inventory and checker
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test the update checker
+        run: python3 -m unittest discover -s tests -q
+      - name: Fail when mod updates are available
+        env:
+          NEXUS_API_KEY: ${{ secrets.NEXUS_API_KEY }}
+        run: python3 modctl.py check --fail-on-update

@@ -37,7 +37,35 @@ class CommandTests(unittest.TestCase):
         guard = mock.patch("modctl.assert_stopped")
         guard.start()
         self.addCleanup(guard.stop)
-        self.args = argparse.Namespace(inventory=self.inventory_path, config=self.config, command="install", mod_id=1, file_id=None, archive=None)
+        self.args = argparse.Namespace(inventory=self.inventory_path, config=self.config, command="install", mod_id=1, file_id=None, archive=None, fail_on_update=False)
+
+    def test_ci_check_fails_on_updates_without_reading_local_game_configuration(self):
+        self.args.command = "check"
+        self.args.config = self.root / "no-game-installation.json"
+        self.args.fail_on_update = True
+        before = self.inventory_path.read_bytes()
+        with mock.patch("modctl.read_setup", side_effect=AssertionError("CI must not read game configuration")), mock.patch("modctl.NexusClient") as client, mock.patch("sys.stdout", new_callable=io.StringIO) as output:
+            client.return_value.files.return_value = {"files": [{"file_id": 11, "category_id": 1, "version": "2"}], "file_updates": [{"old_file_id": 10, "new_file_id": 11}]}
+            self.assertEqual(modctl.run(self.args), 1)
+            self.args.fail_on_update = False
+            self.assertEqual(modctl.run(self.args), 0)
+            client.return_value.download.assert_not_called()
+        self.assertIn("./manage install --mod-id 1 --file-id 11 --archive PATH", output.getvalue())
+        self.assertIn("https://www.nexusmods.com/mewgenics/mods/1?tab=files", output.getvalue())
+        self.assertIn("Download the listed files from Nexus", output.getvalue())
+        self.assertEqual(self.inventory_path.read_bytes(), before)
+
+    def test_ci_check_passes_when_no_updates_are_available(self):
+        self.args.command = "check"
+        self.args.config = self.root / "no-game-installation.json"
+        self.args.fail_on_update = True
+        with mock.patch("modctl.read_setup", side_effect=AssertionError("CI must not read game configuration")), mock.patch("modctl.NexusClient") as client:
+            client.return_value.files.return_value = {"files": [{"file_id": 10, "category_id": 1, "version": "1"}], "file_updates": []}
+            self.assertEqual(modctl.run(self.args), 0)
+
+    def test_ci_cli_fails_clearly_when_the_api_secret_is_missing(self):
+        with mock.patch("sys.argv", ["modctl.py", "--inventory", str(self.inventory_path), "--config", str(self.root / "absent.json"), "check", "--fail-on-update"]), mock.patch.dict("os.environ", {"NEXUS_API_KEY": ""}), mock.patch("modctl.read_setup", side_effect=AssertionError("CI must not read game configuration")):
+            self.assertEqual(modctl.main(), 2)
 
     def archive(self, name):
         path = self.root / ("new-" + name + ".zip")

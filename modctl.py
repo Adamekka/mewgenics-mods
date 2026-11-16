@@ -549,7 +549,9 @@ def run(args):
     inventory = load_inventory(inventory_path)
     if inventory_path.read_bytes() != inventory_before:
         raise ModError("Inventory changed while reading it. Retry.")
-    mod_root, game_root, selection_before, names = read_setup(args.config.expanduser())
+    # Version checks need only the tracked inventory and Nexus, so CI does not need a game installation.
+    if args.command != "check":
+        mod_root, game_root, selection_before, names = read_setup(args.config.expanduser())
     if args.command == "status":
         for mod in inventory["mods"]:
             enabled = game_files_enabled(mod, game_root) if mod["install_target"] == "game_files" else mod["folder"] in names
@@ -649,10 +651,18 @@ def run(args):
             print(f"{mod['name']}: no file-chain update.")
         else:
             print(f"{mod['name']}: {mod['version']} -> {target['version']} (file {target['file_id']})")
+            if args.command == "check":
+                print(f"  https://www.nexusmods.com/mewgenics/mods/{mod['nexus_mod_id']}?tab=files")
+                print(f"  ./manage install --mod-id {mod['nexus_mod_id']} --file-id {target['file_id']} --archive PATH")
             pending.append((mod, target))
     if errors:
         raise ModError("No updates were installed. Resolve these checks first:\n" + "\n".join(errors))
-    if args.command == "check" or not pending:
+    if args.command == "check":
+        if pending and args.fail_on_update:
+            print(f"{len(pending)} mod update(s) available. Download the listed files from Nexus, then run the install commands shown.")
+            return 1
+        return 0
+    if not pending:
         return 0
     with mutation_lock(mod_root):
         # A single transaction covers all requested updates, including downloads and extraction.
@@ -697,6 +707,8 @@ def main():
     for name in ("check", "update"):
         command = commands.add_parser(name, help="Report Nexus file-chain updates" if name == "check" else "Download and install Nexus file-chain updates, retaining backups")
         command.add_argument("--mod-id", type=int, help="Only process this tracked Nexus mod ID")
+        if name == "check":
+            command.add_argument("--fail-on-update", action="store_true", help="Exit 1 when updates are available, for CI; API/configuration errors exit 2")
     args = parser.parse_args()
     try:
         return run(args)
