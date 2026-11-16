@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "game": "mewgenics",
+  "mods": [
+    {
+      "nexus_mod_id": 30,
+      "name": "Detailed Ability Descriptions",
+      "enabled": true,
+      "folder": "Detailed Ability Descriptions",
+      "file_id": 431,
+      "version": "2.0.0",
+      "file_name": "Detailed Ability Descriptions.zip-30-2-0-0-1772606239.zip",
+      "install_target": "mewtator",
+      "sha256": "b65863f3e0429f07a8fffb562791b5081fd8881f86bfc2f8fb4fea56ecb36d72"
+    },
+    {
+      "nexus_mod_id": 88,
+      "name": "Event Descriptions",
+      "enabled": true,
+      "folder": "Event Descriptions",
+      "file_id": 441,
+      "version": "0.0.3",
+      "file_name": "Event_Descriptions-88-0-0-3-1772634266.zip",
+      "install_target": "mewtator",
+      "sha256": "e980ee9c2a8ad6966f694a372788e1363ae7b967055c9158fa5a24eae8ec16e6"
+    },
+    {
+      "nexus_mod_id": 186,
+      "name": "Mod Counter",
+      "enabled": true,
+      "folder": "Mod Counter-186-1-0-0-1773384296",
+      "file_id": 626,
+      "version": "1.0.0",
+      "file_name": "Mod Counter-186-1-0-0-1773384296.zip",
+      "install_target": "mewtator",
+      "sha256": "2792312b4ea1e90cfe7d79c405da244c7f9379273d1382cb9fa47a93a21f9825",
+      "file_renames": {
+        "version.dll": "ModCounter.dll"
+      }
+    },
+    {
+      "nexus_mod_id": 44,
+      "name": "Show Set Bonuses",
+      "enabled": true,
+      "folder": "SetBonusTooltipsIndicators_v0.2.2",
+      "file_id": 131,
+      "version": "0.2.2",
+      "file_name": "(RECOMMENDED) Show Set Bonuses - Indicators-44-0-2-2-1771451730.zip",
+      "install_target": "mewtator",
+      "sha256": "af47bd19b899cafa6cbfc2e65db514390c2a76764c74f3d2f56ee2e12c46167e"
+    },
+    {
+      "nexus_mod_id": 15,
+      "name": "Steven Neutered (Allow Save Scumming-Retry Fights)",
+      "enabled": true,
+      "folder": "StevenNeutered",
+      "file_id": 27,
+      "version": "1.0.1",
+      "file_name": "Steven Neutered - 1.0.1 - Fixed Missing Files-15-1-0-1-1771097735.zip",
+      "install_target": "mewtator",
+      "sha256": "cb6f79a3214c5c55e9a8c7e46b7a761dc8d6238ad6cdbb3d1e0c708fb0ab69e8"
+    },
+    {
+      "nexus_mod_id": 109,
+      "name": "Immortal Cats",
+      "enabled": true,
+      "folder": "Immortal cats",
+      "file_id": 334,
+      "version": "1.0.1",
+      "file_name": "Immortal Cats-109-1-0-1-1772191470.rar",
+      "install_target": "mewtator",
+      "sha256": "d03075f55d77cd259f2ac91286612d059d78d656839d342f512d368b7e290e5d"
+    },
+    {
+      "nexus_mod_id": 225,
+      "name": "Visible Set Item Markers (with sorting)",
+      "enabled": true,
+      "folder": "VisibleSetItemMarkers",
+      "file_id": 1330,
+      "version": "1.3.1",
+      "file_name": "VisibleSetItemMarkers-225-1-3-1-1780774810.zip",
+      "install_target": "mewtator",
+      "sha256": "5e329167cb19ad52bb85fa7ad17f830ef9105fd004bb76d67a47ff5b94d3ed26"
+    },
+    {
+      "nexus_mod_id": 378,
+      "name": "Trailblazer",
+      "enabled": true,
+      "folder": "Trailblazer",
+      "file_id": 1584,
+      "version": "1.1.0",
+      "file_name": "Trailblazer (Mewgenics 1.1.21239) 378 1.1.0 2026-09-08T05-04Z 3CT8CzE5R.zip",
+      "install_target": "mewtator",
+      "sha256": "00d81aba5d3c1b15ed5cf9a7837ca0956e53ccd2d9ff676a67d4e583706c2f15"
+    },
+    {
+      "nexus_mod_id": 512,
+      "name": "mewlinks",
+      "enabled": true,
+      "folder": "Mewlinks",
+      "file_id": 1616,
+      "version": "1.0.6",
+      "file_name": "Mewlinks 512 1.0.6 2026-09-14T19-40Z yzSqzFkZB.zip",
+      "install_target": "mewtator",
+      "sha256": "4350ffe1ac426040972239eed8d368d5127bcb146243a83c2598827aebe68b10"
+    },
+    {
+      "nexus_mod_id": 452,
+      "name": "Push To Meow",
+      "enabled": true,
+      "folder": "PushToMeow",
+      "file_id": 1581,
+      "version": "1.0.1",
+      "file_name": "PushToMeow (Mewgenics 1.1.21239) 452 1.0.1 2026-09-08T04-48Z 5MshMJCuY.zip",
+      "install_target": "mewtator",
+      "sha256": "e4146ff4efb273b165fdf23200b04dbb5d655d02c3e67fb45080603d91271876"
+    },
+    {
+      "nexus_mod_id": 301,
+      "name": "Always Show HP",
+      "enabled": true,
+      "folder": "AlwaysShowHP",
+      "file_id": 1045,
+      "version": "1.1",
+      "file_name": "AlwaysShowHP-301-1-1-1776707547.rar",
+      "install_target": "game_files",
+      "sha256": "bd8a84dadc6c16daa39cbc45a7b04b610ff6f86c919eee3bb1352f962b84c9fc",
+      "file_map": {
+        "AlwaysShowHP.dll": "Mods/AlwaysShowHP.dll"
+      }
+    }
+  ]
+}

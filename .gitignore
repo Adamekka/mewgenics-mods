@@ -1,0 +1,13 @@
+.agents/
+.gemini/
+.state/
+.secrets/
+.env
+__pycache__/
+*.pyc
+*.zip
+*.rar
+*.7z
+*.dll
+*.gpak
+backups/

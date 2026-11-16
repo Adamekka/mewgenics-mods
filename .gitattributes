@@ -1,0 +1,2 @@
+# Stored patches retain upstream context whitespace so they apply to the pinned source unchanged.
+patches/*.patch -whitespace

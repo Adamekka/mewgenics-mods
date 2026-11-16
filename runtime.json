@@ -1,0 +1,17 @@
+{
+  "loader": {
+    "nexus_mod_id": 183,
+    "name": "Mewgenics Mod Framework",
+    "github_repository": "pilout/mewgenics-mod-framework",
+    "version": "1.4.0",
+    "asset": "version.dll",
+    "sha256": "dee858c245be83170990b1aa8073287cc094220203c9776a05561e4a36a5efed"
+  },
+  "mewtator": {
+    "repository": "https://github.com/dancomstock/Mewtator",
+    "commit": "dd48fd8c04c9257af346363bd8fc7384308fd587",
+    "architecture": "linux-arm64",
+    "steam_launch_options": "\"/home/steamos/.local/opt/mewtator/Mewtator\" --steam %command%",
+    "patch": "patches/mewtator-steam-launch.patch"
+  }
+}

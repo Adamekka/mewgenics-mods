@@ -1,0 +1,337 @@
+diff --git a/app/core/services/game_launcher_service.py b/app/core/services/game_launcher_service.py
+index 29ab48c..18d04e0 100644
+--- a/app/core/services/game_launcher_service.py
++++ b/app/core/services/game_launcher_service.py
+@@ -73,25 +73,11 @@ class GameLauncherService:
+         if not os.path.isfile(exe_path):
+             raise FileNotFoundError(f"Game executable not found: {exe_path}")
+         
+-        # Update chainloader manifest if DLL mods are enabled
+-        if config and config.dll_injection_enabled and mod_list:
+-            dll_mods = self.dll_injection_service.scan_for_dll_mods(mod_list)
+-            if dll_mods:
+-                logger = get_logger()
+-                logger.info("Updating chainloader manifest for %d mod(s) with DLLs", len(dll_mods))
+-                manifest_updated = self.dll_injection_service.update_chainloader_manifest(game_dir, config.mod_folder, dll_mods)
+-                if manifest_updated:
+-                    logger.info("Chainloader manifest updated successfully")
+-                else:
+-                    logger.warning("Failed to update chainloader manifest - chainloader.ini may not exist")
+-            else:
+-                # Clear manifest if no DLL mods are enabled
+-                self.dll_injection_service.clear_chainloader_manifest(game_dir, config.mod_folder)
+-        else:
+-            # Clear manifest if DLL injection is disabled
+-            if config:
+-                self.dll_injection_service.clear_chainloader_manifest(game_dir, config.mod_folder)
+-        
++        if config and mod_list:
++            self.prepare_dll_manifest(game_dir, config, mod_list)
++        elif config:
++            self.dll_injection_service.clear_chainloader_manifest(game_dir, config.mod_folder)
++
+         launch_strategy = LaunchStrategyFactory.create(game_dir)
+         path_strategy = PathStrategyFactory.create(game_dir)
+         
+@@ -107,6 +93,19 @@ class GameLauncherService:
+         
+         launch_strategy.launch(exe_path, converted_paths, game_dir, config, extra_args, translation_service)
+     
++    def prepare_dll_manifest(self, game_dir: str, config: Config, mod_list: ModList) -> bool:
++        dll_mods = self.dll_injection_service.scan_for_dll_mods(mod_list) if config.dll_injection_enabled else []
++        if dll_mods:
++            logger = get_logger()
++            logger.info("Updating chainloader manifest for %d mod(s) with DLLs", len(dll_mods))
++            updated = self.dll_injection_service.update_chainloader_manifest(game_dir, config.mod_folder, dll_mods)
++            if updated:
++                logger.info("Chainloader manifest updated successfully")
++            else:
++                logger.warning("Failed to update chainloader manifest - chainloader.ini may not exist")
++            return updated
++        return self.dll_injection_service.clear_chainloader_manifest(game_dir, config.mod_folder)
++
+     def get_launch_options(self, game_dir: str, mod_paths: List[str], config=None, mod_list=None) -> str:
+         launch_strategy = LaunchStrategyFactory.create(game_dir)
+         path_strategy = PathStrategyFactory.create(game_dir)
+diff --git a/app/core/strategies/launch_strategy.py b/app/core/strategies/launch_strategy.py
+index 23f35c0..078c1f3 100644
+--- a/app/core/strategies/launch_strategy.py
++++ b/app/core/strategies/launch_strategy.py
+@@ -295,7 +295,7 @@ class ProtonLaunchStrategy(LaunchStrategy):
+             parts.append('%command%')
+ 
+         if extra_args:
+-            parts.extend(extra_args)
++            parts.extend(shlex.quote(arg) for arg in extra_args)
+ 
+         if mod_paths:
+             parts.append("-modpaths")
+diff --git a/app/main.py b/app/main.py
+index 4a22aec..827e017 100644
+--- a/app/main.py
++++ b/app/main.py
+@@ -1,4 +1,5 @@
+ import os
++import sys
+ import traceback
+ from pathlib import Path
+ import tkinter as tk
+@@ -21,6 +22,7 @@ from app.utils.resource_utils import apply_app_icon
+ from app.ui.layout_utils import fit_combobox_to_values, fit_window_to_content
+ from app.utils.platform_utils import get_executable_dir
+ from app.version import versioned_title
++from app.steam_launch import SteamLaunchError, launch_from_steam
+ 
+ 
+ def show_language_selection_dialog(root, translation_service, theme_service, theme_name: str):
+@@ -167,7 +169,7 @@ def main():
+     
+     controller.start()
+ 
+-def _report_startup_failure() -> None:
++def _report_startup_failure(title: str, message: str) -> None:
+     """Report startup exceptions..."""
+     details = traceback.format_exc()
+     try:
+@@ -178,20 +180,32 @@ def _report_startup_failure() -> None:
+     except Exception:
+         log_path = None
+ 
++    path_hint = f"\n\nDetails were written to:\n{log_path}" if log_path else ""
++    # Steam captures stderr even when a display is unavailable for the error dialog.
++    print(f"{title}: {message}{path_hint}", file=sys.stderr)
+     try:
+         from tkinter import messagebox
+-        path_hint = f"\n\nDetails were written to:\n{log_path}" if log_path else ""
+         messagebox.showerror(
+-            "Mewtator - Startup Error",
+-            "Mewtator could not finish starting." + path_hint,
++            title,
++            message + path_hint,
+         )
+     except Exception:
+         pass
+ 
+ 
+ if __name__ == "__main__":
++    steam_launch = sys.argv[1:2] == ["--steam"]
+     try:
+-        main()
+-    except Exception:
+-        _report_startup_failure()
++        if steam_launch:
++            launch_from_steam(sys.argv[2:])
++        else:
++            main()
++    except Exception as error:
++        if steam_launch:
++            message = str(error) if isinstance(error, SteamLaunchError) else (
++                "Open Mewtator and check your game and mod settings, then try again."
++            )
++            _report_startup_failure("Mewgenics could not start", message)
++            sys.exit(1)
++        _report_startup_failure("Mewtator - Startup Error", "Mewtator could not finish starting.")
+         raise
+diff --git a/app/steam_launch.py b/app/steam_launch.py
+new file mode 100644
+index 0000000..47ac9b0
+--- /dev/null
++++ b/app/steam_launch.py
+@@ -0,0 +1,78 @@
++import json
++import os
++from pathlib import Path
++import shlex
++import sys
++
++from app.core.models.config import Config
++from app.core.services.dll_injection_service import DllInjectionService
++from app.core.services.game_launcher_service import GameLauncherService
++from app.core.services.mod_service import ModService
++from app.infrastructure.mod_repository import ModRepository
++from app.utils.logging_utils import get_logger
++from app.utils.platform_utils import get_executable_dir
++
++
++class SteamLaunchError(Exception):
++    """A launch problem that the user can resolve in Mewtator or Steam."""
++
++
++def launch_from_steam(command: list[str]) -> None:
++    if not command:
++        raise SteamLaunchError("Set Steam's launch options to include %command% after --steam.")
++    config_path = Path(get_executable_dir()) / "config.json"
++    try:
++        config = Config.from_dict(json.loads(config_path.read_text(encoding="utf-8")))
++        config.normalize_paths()
++    except (OSError, ValueError, TypeError) as error:
++        raise SteamLaunchError("Open Mewtator and save your game and mod settings, then try again.") from error
++    if not config.is_valid() or not (Path(config.mod_folder) / "modlist.txt").is_file():
++        raise SteamLaunchError("Open Mewtator and check your game and mods folders, then try again.")
++
++    mod_service = ModService(ModRepository(config.mod_folder))
++    mod_list = mod_service.load_mods()
++    missing = mod_service.get_missing_mod_names(mod_list)
++    if missing:
++        raise SteamLaunchError("Restore or disable these missing mods in Mewtator: " + ", ".join(missing))
++    requirements = mod_service.validate_requirements(mod_list)
++    if requirements:
++        raise SteamLaunchError("Fix these mod requirements in Mewtator before playing:\n\n" + "\n".join(requirements))
++
++    dll_service = DllInjectionService()
++    if dll_service.has_dll_mods(mod_list) and not config.dll_injection_enabled:
++        raise SteamLaunchError("Enable DLL mod support in Mewtator before using your enabled DLL mods.")
++    launcher = GameLauncherService(dll_service)
++    if not Path(launcher.find_executable(config.game_install_dir)).is_file():
++        raise SteamLaunchError("Finish installing Mewgenics in Steam, then try again.")
++    if not launcher.prepare_dll_manifest(config.game_install_dir, config, mod_list):
++        raise SteamLaunchError("Check Mewjector and your mods folder permissions in Mewtator, then try again.")
++    paths = mod_service.get_launch_mod_paths(mod_list, config)
++    options = shlex.split(launcher.get_launch_options(config.game_install_dir, paths, config, mod_list))
++    env = os.environ.copy()
++    if "%command%" in options:
++        if options.count("%command%") != 1:
++            raise SteamLaunchError("Remove %command% from Mewtator's custom launch options. Keep it only in Steam's launch options.")
++        position = options.index("%command%")
++        for assignment in options[:position]:
++            name, separator, value = assignment.partition("=")
++            assert separator and name in {"STEAM_COMPAT_MOUNTS", "WINEDLLOVERRIDES"}, "Unexpected launch environment assignment"
++            # Preserve Steam's existing mounts and DLL overrides alongside Mewtator's requirements.
++            if env.get(name):
++                value = env[name] + (":" if name == "STEAM_COMPAT_MOUNTS" else ";") + value
++            env[name] = value
++        game_args = options[position + 1:]
++    else:
++        game_args = options
++
++    # Frozen apps prepend bundled libraries; Proton must retain Steam's original library search path.
++    if getattr(sys, "frozen", False):
++        if "LD_LIBRARY_PATH_ORIG" in env:
++            env["LD_LIBRARY_PATH"] = env["LD_LIBRARY_PATH_ORIG"]
++        else:
++            env.pop("LD_LIBRARY_PATH", None)
++    get_logger().info("Steam launch with %d enabled mods: %s", len(mod_list.enabled_mods), shlex.join(command + game_args))
++    try:
++        # Replacing this process keeps Steam's game tracking and original Proton command intact.
++        os.execvpe(command[0], command + game_args, env)
++    except OSError as error:
++        raise SteamLaunchError("Steam's game command could not start. Restart Steam and try again.") from error
+diff --git a/tests/test_steam_launch.py b/tests/test_steam_launch.py
+new file mode 100644
+index 0000000..3b5b1ca
+--- /dev/null
++++ b/tests/test_steam_launch.py
+@@ -0,0 +1,113 @@
++import json
++import os
++from pathlib import Path
++import tempfile
++import unittest
++from unittest.mock import patch
++
++from app.core.models.config import Config
++from app.steam_launch import SteamLaunchError, launch_from_steam
++
++
++class SteamLaunchTests(unittest.TestCase):
++    def setUp(self):
++        self.temp = tempfile.TemporaryDirectory()
++        self.addCleanup(self.temp.cleanup)
++        self.root = Path(self.temp.name)
++        self.game = self.root / "Mewgenics"
++        self.game.mkdir()
++        (self.game / "Mewgenics.exe").touch()
++        self.mods = self.root / "mods"
++        self.mods.mkdir()
++        (self.mods / "modlist.txt").write_text("")
++        self.config = Config(game_install_dir=str(self.game), mod_folder=str(self.mods), mewtator_intro_enabled=False)
++        self.command = ["/usr/bin/proton test", "run", "/game path/Mewgenics.exe", "original arg"]
++        self.addCleanup(patch.stopall)
++        patch("app.steam_launch.get_executable_dir", return_value=str(self.root)).start()
++        patch("app.steam_launch.get_logger").start()
++        self.execute = patch("app.steam_launch.os.execvpe").start()
++
++    def save_config(self):
++        (self.root / "config.json").write_text(json.dumps(self.config.to_dict()))
++
++    def test_preserves_original_command_and_saved_mod_order(self):
++        for name in ["First", "Second mod", "Disabled"]:
++            (self.mods / name).mkdir()
++        (self.mods / "modlist.txt").write_text("Second mod\nFirst\n")
++        self.config.custom_launch_options = '--label "value with spaces"'
++        self.save_config()
++        launch_from_steam(self.command)
++        executable, args, env = self.execute.call_args.args
++        self.assertEqual(executable, self.command[0])
++        self.assertEqual(args[:len(self.command)], self.command)
++        self.assertEqual(args[len(self.command):len(self.command) + 3], ["--label", "value with spaces", "-modpaths"])
++        self.assertTrue(args[-2].endswith("\\Second mod"))
++        self.assertTrue(args[-1].endswith("\\First"))
++        self.assertEqual(len(args), len(self.command) + 5)
++        self.assertIn(str(self.mods), env["STEAM_COMPAT_MOUNTS"])
++
++    def test_reloads_saved_selection_on_every_launch(self):
++        (self.mods / "Enabled").mkdir()
++        (self.mods / "modlist.txt").write_text("Enabled\n")
++        self.save_config()
++        launch_from_steam(self.command)
++        self.assertIn("-modpaths", self.execute.call_args.args[1])
++        (self.mods / "modlist.txt").write_text("")
++        launch_from_steam(self.command)
++        self.assertEqual(self.execute.call_args.args[1], self.command)
++
++    def test_placeholder_in_custom_options_has_actionable_error(self):
++        self.config.custom_launch_options = "%command%"
++        self.save_config()
++        with self.assertRaisesRegex(SteamLaunchError, "Remove %command%"):
++            launch_from_steam(self.command)
++        self.execute.assert_not_called()
++
++    def test_missing_mod_aborts_instead_of_launching_without_it(self):
++        (self.mods / "modlist.txt").write_text("Missing\n")
++        self.save_config()
++        with self.assertRaisesRegex(SteamLaunchError, "Missing"):
++            launch_from_steam(self.command)
++        self.execute.assert_not_called()
++
++    def test_invalid_dependency_aborts(self):
++        mod = self.mods / "Dependent"
++        mod.mkdir()
++        (mod / "description.json").write_text(json.dumps({"requirements": ["Required"]}))
++        (self.mods / "modlist.txt").write_text("Dependent\n")
++        self.save_config()
++        with self.assertRaisesRegex(SteamLaunchError, "Required"):
++            launch_from_steam(self.command)
++        self.execute.assert_not_called()
++
++    def test_frozen_launch_restores_steam_libraries_and_preserves_environment(self):
++        self.config.dll_injection_enabled = True
++        self.save_config()
++        with patch("app.steam_launch.sys.frozen", True, create=True), patch.dict(os.environ, {
++            "LD_LIBRARY_PATH": "/bundled/libs:/steam/libs",
++            "LD_LIBRARY_PATH_ORIG": "/steam/libs",
++            "STEAM_COMPAT_MOUNTS": "/existing/mount",
++            "WINEDLLOVERRIDES": "dinput8=n,b",
++        }, clear=True):
++            launch_from_steam(self.command)
++        env = self.execute.call_args.args[2]
++        self.assertEqual(env["LD_LIBRARY_PATH"], "/steam/libs")
++        self.assertTrue(env["STEAM_COMPAT_MOUNTS"].startswith("/existing/mount:"))
++        self.assertEqual(env["WINEDLLOVERRIDES"], "dinput8=n,b;version=n,b")
++
++    def test_dll_manifest_is_refreshed_for_saved_selection(self):
++        mod = self.mods / "DLL mod"
++        mod.mkdir()
++        (mod / "mod.dll").touch()
++        (self.mods / "modlist.txt").write_text("DLL mod\n")
++        (self.game / "chainloader.ini").write_text("[Chainloader]\nMewtatorManifest=\n")
++        self.config.dll_injection_enabled = True
++        self.save_config()
++        launch_from_steam(self.command)
++        manifest = (self.mods / "mewtator_dll_manifest.txt").read_text()
++        self.assertTrue(manifest.strip().endswith("\\DLL mod\\mod.dll"))
++        self.assertIn("mewtator_dll_manifest.txt", (self.game / "chainloader.ini").read_text())
++
++
++if __name__ == "__main__":
++    unittest.main()
